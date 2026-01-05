@@ -20,8 +20,12 @@ func Routes(e *echo.Echo, db *gorm.DB) {
 
 	empresaRepo := &repositories.EmpresaRepository{DB: db}
 	empresaService := &services.EmpresaService{Repo: empresaRepo}
-	empresaHandler := &handlers.Handler{Service: empresaService}
+	empresaHandler := &handlers.EmpresaHandler{Service: empresaService}
 
+	programaRepo := &repositories.ProgramaRepository{DB: db}
+	programaService := &services.ProgramaService{Repo: programaRepo}
+	programaHandler := &handlers.ProgramaHandler{Service: programaService}
+	
 	api := e.Group("/rumosaudavel-api")
 
 	api.POST("/login", authHandler.Login)
@@ -36,6 +40,11 @@ func Routes(e *echo.Echo, db *gorm.DB) {
 	api.GET("/empresas", empresaHandler.List)
 	api.GET("/empresas/:id", empresaHandler.Get)
 	api.PUT("/empresas/:id", empresaHandler.Update)
+
+	api.POST("/programas", programaHandler.Create)
+	api.GET("/programas", programaHandler.List)
+	api.GET("/programas/:id", programaHandler.Get)
+	api.PUT("/programas/:id", programaHandler.Update)
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTMiddleware)
