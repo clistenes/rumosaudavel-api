@@ -30,10 +30,6 @@ func (r *UserRepository) Update(user *models.User) error {
 	return r.DB.Save(user).Error
 }
 
-func (r *UserRepository) Delete(id uint) error {
-	return r.DB.Delete(&models.User{}, id).Error
-}
-
 func (r *UserRepository) FindByEmail(email string) (*models.User, error) {
 	var user models.User
 	err := r.DB.Where("email = ?", email).First(&user).Error

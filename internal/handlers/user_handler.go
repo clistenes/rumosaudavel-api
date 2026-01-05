@@ -59,9 +59,3 @@ func (h *UserHandler) Update(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "usuário atualizado"})
 }
-
-func (h *UserHandler) Delete(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
-	h.Service.Delete(uint(id))
-	return c.JSON(http.StatusOK, echo.Map{"message": "usuário removido"})
-}

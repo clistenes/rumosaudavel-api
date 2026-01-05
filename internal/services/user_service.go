@@ -50,7 +50,3 @@ func (s *UserService) Update(id uint, name, email, password string) error {
 
 	return s.Repo.Update(user)
 }
-
-func (s *UserService) Delete(id uint) error {
-	return s.Repo.Delete(id)
-}

@@ -27,7 +27,6 @@ func RegisterRoutes(e *echo.Echo, db *gorm.DB) {
 	api.GET("/users", userHandler.List)
 	api.GET("/users/:id", userHandler.Get)
 	api.PUT("/users/:id", userHandler.Update)
-	api.DELETE("/users/:id", userHandler.Delete)
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTMiddleware)
