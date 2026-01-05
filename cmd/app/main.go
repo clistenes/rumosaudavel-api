@@ -17,7 +17,7 @@ func main() {
 	db := database.ConnectMySQL()
 
 	e := echo.New()
-	routes.RegisterRoutes(e, db)
+	routes.Routes(e, db)
 
 	port := os.Getenv("APP_PORT")
 	if port == "" {
