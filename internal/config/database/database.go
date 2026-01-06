@@ -6,6 +6,7 @@ import (
 	"os"
 
 	sql "database/sql"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func ConnectMySQL() *sql.DB {
