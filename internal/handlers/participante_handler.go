@@ -194,7 +194,7 @@ func (h *ParticipanteHandler) calculaTermometro(userID int) int {
 		FROM participantes_respostas pr
 			JOIN perguntas p ON (p.id = pr.id_pergunta)
 		WHERE pr.id_user = ? AND pr.id_questionario = 95
-	`)
+	`, userID)
 	defer rows.Close()
 
 	total := 0
