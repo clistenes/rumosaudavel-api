@@ -9,8 +9,18 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+var allowedPaths = map[string]bool{
+	"/rumosaudavel-api/login":    true,
+	"/rumosaudavel-api/register": true,
+}
+
+func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {	
 	return func(c echo.Context) error {
+		path := c.Request().URL.Path
+		if allowedPaths[path] {
+			return next(c)
+		}
+
 		authHeader := c.Request().Header.Get("Authorization")
 		if authHeader == "" {
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Token não fornecido"})

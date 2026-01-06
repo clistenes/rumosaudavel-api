@@ -6,45 +6,42 @@ import (
 	"rumosaudavel-api/internal/repositories"
 	"rumosaudavel-api/internal/services"
 
+	"github.com/joho/godotenv"
+
 	"github.com/labstack/echo/v4"
-	"gorm.io/gorm"
+	"database/sql"
 )
 
-func Routes(e *echo.Echo, db *gorm.DB) {
+func init() {
+	godotenv.Load()
+}
+
+func Routes(e *echo.Echo, db *sql.DB) {
+	dashboardHandler := handlers.NewDashboardHandler(db)
+
+	api := e.Group("/rumosaudavel-api")
+
+	api.GET("/dashboard/home", dashboardHandler.Home)
+	api.GET("/dashboard/bugs", dashboardHandler.Bugs)
+
 	userRepo := &repositories.UserRepository{DB: db}
-	userService := &services.UserService{Repo: userRepo}
-	userHandler := &handlers.UserHandler{Service: userService}
 
 	authService := &services.AuthService{UserRepo: userRepo}
 	authHandler := &handlers.AuthHandler{AuthService: authService}
-
-	empresaRepo := &repositories.EmpresaRepository{DB: db}
-	empresaService := &services.EmpresaService{Repo: empresaRepo}
-	empresaHandler := &handlers.EmpresaHandler{Service: empresaService}
-
-	programaRepo := &repositories.ProgramaRepository{DB: db}
-	programaService := &services.ProgramaService{Repo: programaRepo}
-	programaHandler := &handlers.ProgramaHandler{Service: programaService}
 	
-	api := e.Group("/rumosaudavel-api")
-
 	api.POST("/login", authHandler.Login)
 	api.POST("/register", authHandler.Register)
 
-	api.POST("/users", userHandler.Create)
-	api.GET("/users", userHandler.List)
-	api.GET("/users/:id", userHandler.Get)
-	api.PUT("/users/:id", userHandler.Update)
+	participanteHandler := handlers.NewParticipanteHandler(db)
 
-	api.POST("/empresas", empresaHandler.Create)
-	api.GET("/empresas", empresaHandler.List)
-	api.GET("/empresas/:id", empresaHandler.Get)
-	api.PUT("/empresas/:id", empresaHandler.Update)
-
-	api.POST("/programas", programaHandler.Create)
-	api.GET("/programas", programaHandler.List)
-	api.GET("/programas/:id", programaHandler.Get)
-	api.PUT("/programas/:id", programaHandler.Update)
+	api.POST("/participantes", participanteHandler.Criar)
+	api.GET("/participantes/:id", participanteHandler.Lista)
+	api.GET("/participantes/termometro/:id", participanteHandler.Termometro)
+	api.GET("/participantes/termometro-cor", participanteHandler.TermometroCor)
+	api.DELETE("/participantes/:id", participanteHandler.Apagar)
+	api.DELETE("/participantes/empresa/:id", participanteHandler.ApagarPorEmpresa)
+	api.POST("/participantes/gera-indices", participanteHandler.GeraIndices)
+	api.POST("/participantes/upload", participanteHandler.UploadExcel)
 
 	protected := api.Group("")
 	protected.Use(middleware.JWTMiddleware)
