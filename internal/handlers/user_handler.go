@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -172,15 +173,14 @@ func (h *UserHandler) Esqueci(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, "email não encontrado")
 	}
 
-	token := randomToken() + "-" + string(id)
+	token := randomToken() + "-" + fmt.Sprint(id)
 
 	_, _ = h.DB.Exec(`
 		UPDATE users SET remember_token=? WHERE id=?
 	`, token, id)
 
 	// enviar email
-	// link: /reset-senha/:token
-
+	
 	return c.NoContent(http.StatusOK)
 }
 
