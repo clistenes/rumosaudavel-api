@@ -166,7 +166,7 @@ func (h *UserHandler) Esqueci(c echo.Context) error {
 
 	var id int
 	err := h.DB.QueryRow(`
-		SELECT id FROM users WHERE login=?
+		SELECT id FROM users WHERE email=?
 	`, email).Scan(&id)
 
 	if err != nil {
@@ -179,7 +179,8 @@ func (h *UserHandler) Esqueci(c echo.Context) error {
 		UPDATE users SET remember_token=? WHERE id=?
 	`, token, id)
 
-	// enviar email
+	// enviar email com o token (inserido no resetSenha)
+	fmt.Printf("Token de reset de senha para %s: %s\n", email, token)
 	
 	return c.NoContent(http.StatusOK)
 }
