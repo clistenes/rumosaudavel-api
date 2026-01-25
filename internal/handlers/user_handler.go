@@ -33,17 +33,18 @@ func NewUserHandler(db *sql.DB) *UserHandler {
 
 func (h *UserHandler) Criar(c echo.Context) error {
 	id := c.FormValue("id_usuario")
+	login := c.FormValue("usuario_login")
 	nome := c.FormValue("usuario_nome")
 	email := c.FormValue("usuario_email")
 	senha := c.FormValue("usuario_senha")
 
-	if nome == "" || email == "" {
-		return c.JSON(http.StatusBadRequest, "nome e email obrigatórios")
+	if nome == "" || login == "" || email == "" {
+		return c.JSON(http.StatusBadRequest, "nome, login e email obrigatórios")
 	}
 
 	var count int
 	query := `SELECT COUNT(*) FROM users WHERE login = ?`
-	args := []any{email}
+	args := []any{login}
 
 	if id != "" {
 		query += ` AND id != ?`
@@ -62,9 +63,9 @@ func (h *UserHandler) Criar(c echo.Context) error {
 	if id == "" {
 		hash, _ := bcrypt.GenerateFromPassword([]byte(senha), bcrypt.DefaultCost)
 		_, err := h.DB.Exec(`
-			INSERT INTO users (name, login, password, type)
-			VALUES (?, ?, ?, '1')
-		`, nome, email, hash)
+			INSERT INTO users (name, login, email, password, type)
+			VALUES (?, ?, ?, ?, '1')
+		`, nome, login, email, hash)
 		if err != nil {
 			return err
 		}
