@@ -1,0 +1,11 @@
+services:
+  api:
+    container_name: rumosaudavel-api
+    build:
+      context: .
+      dockerfile: dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
