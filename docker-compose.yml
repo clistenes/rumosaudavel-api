@@ -9,3 +9,9 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_net
+
+networks:
+  app_net:
+    driver: bridge
