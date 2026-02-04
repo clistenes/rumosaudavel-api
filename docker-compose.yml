@@ -10,8 +10,8 @@ services:
       - .env
     restart: unless-stopped
     networks:
-      - app_net
+      - rumosaudavel_network
 
 networks:
-  app_net:
-    driver: bridge
+  rumosaudavel_network:
+    external: true
