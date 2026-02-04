@@ -21,7 +21,7 @@ func main() {
 
 	port := os.Getenv("APP_PORT")
 	if port == "" {
-		port = "9443"
+		port = "80"
 	}
 
 	log.Println("Servidor rodando na porta " + port)
