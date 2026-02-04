@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -14,9 +15,10 @@ var allowedPaths = map[string]bool{
 	"/rumosaudavel-api/register": true,
 }
 
-func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {	
+func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		path := c.Request().URL.Path
+		fmt.Println("Request path:", path)
 		if allowedPaths[path] {
 			return next(c)
 		}
