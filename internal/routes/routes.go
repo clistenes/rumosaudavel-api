@@ -16,6 +16,7 @@ func init() {
 
 func Routes(e *echo.Echo, db *sql.DB) {
 	api := e.Group("/rumosaudavel-api")
+	api.Use(middleware.JWTMiddleware)
 
 	userHandler := handlers.NewUserHandler(db)
 	
@@ -108,7 +109,4 @@ func Routes(e *echo.Echo, db *sql.DB) {
 	api.GET("/participante/relatorio", questionarioInteracaoHandler.Relatorio)
 	api.GET("/participante/prontuario", questionarioInteracaoHandler.Prontuario)
 	api.GET("/participante/contato", questionarioInteracaoHandler.Contato)
-
-	protected := api.Group("")
-	protected.Use(middleware.JWTMiddleware)
 }
