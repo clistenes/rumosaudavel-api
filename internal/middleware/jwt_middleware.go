@@ -20,6 +20,7 @@ func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		path := c.Request().URL.Path
 		fmt.Println("Request path:", path)
 		if allowedPaths[path] {
+			fmt.Println("Path allowed without JWT:", path)
 			return next(c)
 		}
 
