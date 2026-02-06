@@ -126,7 +126,11 @@ func (h *UserHandler) Login(c echo.Context) error {
 		FROM users WHERE login=?
 	`, login).Scan(&id, &hash, &tipo, &empresaID)
 
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, "erro ao autenticar: "+err.Error())
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		return c.JSON(http.StatusUnauthorized, "login ou senha incorretos")
 	}
 
