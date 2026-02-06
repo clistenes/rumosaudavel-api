@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -25,12 +26,16 @@ func main() {
 	}
 
 	certFile := os.Getenv("SSL_CERT_FILE")
-	keyFile  := os.Getenv("SSL_KEY_FILE")
+	keyFile := os.Getenv("SSL_KEY_FILE")
 
 	if certFile == "" || keyFile == "" {
-		log.Fatal("Certificado SSL ou chave não definidos")
+		fmt.Println("Certificado SSL ou chave não fornecidos. Iniciando em modo HTTP.")
 	}
 
 	log.Println("Servidor HTTPS rodando na porta " + port)
-	e.Logger.Fatal(e.StartTLS(":"+port, certFile, keyFile))
+	if os.Getenv("ENV") == "DEV" {
+		e.Logger.Fatal(e.Start(":" + port))
+	} else {
+		e.Logger.Fatal(e.StartTLS(":"+port, certFile, keyFile))
+	}
 }

@@ -127,7 +127,7 @@ func (h *UserHandler) Login(c echo.Context) error {
 	`, login).Scan(&id, &hash, &tipo, &empresaID)
 
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-		return echo.ErrUnauthorized
+		return c.JSON(http.StatusUnauthorized, "login ou senha incorretos")
 	}
 
 	claims := JwtCustomClaims{
