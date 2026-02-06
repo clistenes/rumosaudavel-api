@@ -16,3 +16,7 @@ services:
     restart: unless-stopped
     networks:
       - rumosaudavel_network
+
+networks:
+  rumosaudavel_network:
+    external: true
