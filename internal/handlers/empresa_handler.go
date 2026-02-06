@@ -349,7 +349,7 @@ func (h *EmpresaHandler) GetSemaforoFilterValues(c echo.Context) error {
 		FROM campos_empresas_respostas cer
 		WHERE cer.id_empresa = ? AND cer.id_campo = ?
 		GROUP BY cer.resposta
-		HAVING total > 5
+		-- HAVING total > 5
 		ORDER BY cer.resposta ASC`
 
 	rows, _ := h.DB.Query(query, idEmpresa, filterID)
