@@ -18,7 +18,7 @@ type UserHandler struct {
 	DB *sql.DB
 }
 
-var jwtSecret = os.Getenv("JWT_SECRET")
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 type JwtCustomClaims struct {
 	UserID    int    `json:"user_id"`
@@ -149,6 +149,7 @@ func (h *UserHandler) Login(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{
 		"token": t,
 		"type":  tipo,
+		"empresa_id": claims.EmpresaID,
 	})
 }
 
