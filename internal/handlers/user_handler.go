@@ -149,7 +149,6 @@ func (h *UserHandler) Login(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{
 		"token": t,
 		"type":  tipo,
-		"empresa_id": claims.EmpresaID,
 	})
 }
 
