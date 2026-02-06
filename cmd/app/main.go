@@ -24,6 +24,13 @@ func main() {
 		port = "443"
 	}
 
-	log.Println("Servidor rodando na porta " + port)
-	e.Logger.Fatal(e.Start(":" + port))
+	certFile := os.Getenv("SSL_CERT_FILE")
+	keyFile  := os.Getenv("SSL_KEY_FILE")
+
+	if certFile == "" || keyFile == "" {
+		log.Fatal("Certificado SSL ou chave não definidos")
+	}
+
+	log.Println("Servidor HTTPS rodando na porta " + port)
+	e.Logger.Fatal(e.StartTLS(":"+port, certFile, keyFile))
 }

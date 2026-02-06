@@ -8,10 +8,11 @@ services:
       - "443:443"
     env_file:
       - .env
+    environment:
+      SSL_CERT_FILE: /cert/fullchain.pem
+      SSL_KEY_FILE: /cert/privkey.pem
+    volumes:
+      - ./cert:/cert:ro
     restart: unless-stopped
     networks:
       - rumosaudavel_network
-
-networks:
-  rumosaudavel_network:
-    external: true
