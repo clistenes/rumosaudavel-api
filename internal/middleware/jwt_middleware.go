@@ -13,6 +13,9 @@ import (
 var allowedPaths = map[string]bool{
 	"/rumosaudavel-api/login":    true,
 	"/rumosaudavel-api/register": true,
+	"/rumosaudavel-api/esqueci":  true,
+	"/rumosaudavel-api/reset":    true,
+	"/rumosaudavel-api/health":   true,
 }
 
 func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

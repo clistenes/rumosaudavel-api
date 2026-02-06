@@ -18,6 +18,8 @@ func Routes(e *echo.Echo, db *sql.DB) {
 	api := e.Group("/rumosaudavel-api")
 	api.Use(middleware.JWTMiddleware)
 
+	api.GET("/health", HealthCheck)
+
 	userHandler := handlers.NewUserHandler(db)
 	
 	api.POST("/login", userHandler.Login)
@@ -109,4 +111,8 @@ func Routes(e *echo.Echo, db *sql.DB) {
 	api.GET("/participante/relatorio", questionarioInteracaoHandler.Relatorio)
 	api.GET("/participante/prontuario", questionarioInteracaoHandler.Prontuario)
 	api.GET("/participante/contato", questionarioInteracaoHandler.Contato)
+}
+
+func HealthCheck(c echo.Context) error {
+	return c.JSON(200, echo.Map{"status": "ok"})
 }
