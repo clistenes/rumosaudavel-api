@@ -18,7 +18,7 @@ type UserHandler struct {
 	DB *sql.DB
 }
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var jwtSecret = os.Getenv("JWT_SECRET")
 
 type JwtCustomClaims struct {
 	UserID    int    `json:"user_id"`
