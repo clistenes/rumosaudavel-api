@@ -18,8 +18,6 @@ type UserHandler struct {
 	DB *sql.DB
 }
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-
 type JwtCustomClaims struct {
 	UserID    int    `json:"user_id"`
 	Type      string `json:"type"`
@@ -134,18 +132,21 @@ func (h *UserHandler) Login(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, "login ou senha incorretos")
 	}
 
+	empresaIDInt := 0
+	if empresaID.Valid {
+		empresaIDInt = int(empresaID.Int64)
+	}
+
 	claims := JwtCustomClaims{
 		UserID: id,
 		Type:   tipo,
+		EmpresaID: &empresaIDInt,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 		},
 	}
 
-	if empresaID.Valid {
-		eid := int(empresaID.Int64)
-		claims.EmpresaID = &eid
-	}
+	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	t, _ := token.SignedString(jwtSecret)
