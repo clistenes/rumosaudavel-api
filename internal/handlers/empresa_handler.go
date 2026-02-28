@@ -56,7 +56,7 @@ func (h *EmpresaHandler) Criar(c echo.Context) error {
 }
 
 func (h *EmpresaHandler) Lista(c echo.Context) error {
-	rows, err := h.DB.Query("SELECT id, nome, cor FROM empresas")
+	rows, err := h.DB.Query("SELECT id, COALESCE(nome, 'Sem nome'), COALESCE(cor, '#000000') AS cor FROM empresas")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
 	}
