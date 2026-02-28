@@ -29,16 +29,13 @@ func (h *EmpresaHandler) Criar(c echo.Context) error {
 		termo = "s"
 	}
 
-	var logo string
-	file, err := c.FormFile("empresa_logotipo")
-	if err == nil {
-		logo, _ = h.salvarArquivo(file, "uploads/empresas")
-	}
+	empresaLogotipoNome := c.FormValue("empresa_logotipo_nome")
+	fullPath := "public/uploads/empresas/" + empresaLogotipoNome
 
 	res, err := h.DB.Exec(`
 		INSERT INTO empresas (nome, introducao, cor, termo_consentimento, logotipo)
 		VALUES (?, ?, ?, ?, ?)
-	`, c.FormValue("empresa_nome"), c.FormValue("empresa_introducao"), c.FormValue("empresa_cor"), termo, logo)
+	`, c.FormValue("empresa_nome"), c.FormValue("empresa_introducao"), c.FormValue("empresa_cor"), termo, fullPath)
 	if err != nil {
 		return err
 	}
@@ -93,18 +90,14 @@ func (h *EmpresaHandler) Editar(c echo.Context) error {
 		termo = "s"
 	}
 
-	file, err := c.FormFile("empresa_logotipo")
-	if err == nil {
-		var oldLogo string
-		h.DB.QueryRow("SELECT logotipo FROM empresas WHERE id = ?", id).Scan(&oldLogo)
-		if oldLogo != "" {
-			os.Remove(filepath.Join("public/uploads/empresas", oldLogo))
-		}
-		newLogo, _ := h.salvarArquivo(file, "uploads/empresas")
-		h.DB.Exec("UPDATE empresas SET logotipo = ? WHERE id = ?", newLogo, id)
+	empresaLogotipoNome := c.FormValue("empresa_logotipo_nome")
+	fullPath := "public/uploads/empresas/" + empresaLogotipoNome
+
+	if empresaLogotipoNome != "" {
+		h.DB.Exec("UPDATE empresas SET logotipo = ? WHERE id = ?", fullPath, id)
 	}
 
-	_, err = h.DB.Exec(`
+	_, err := h.DB.Exec(`
 		UPDATE empresas SET 
 			nome=?, introducao=?, cor=?, termo_consentimento=?, 
 			id_campo_dashboard_heatmap_1=?, id_campo_dashboard_heatmap_2=?
@@ -117,6 +110,10 @@ func (h *EmpresaHandler) Editar(c echo.Context) error {
 		c.FormValue("id_campo_dashboard_heatmap_2"),
 		id,
 	)
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
 
 	empresaIDInt, _ := strconv.Atoi(id)
 	h.processarCamposExtras(c, empresaIDInt)
