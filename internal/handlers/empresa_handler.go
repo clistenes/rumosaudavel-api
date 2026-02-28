@@ -56,16 +56,33 @@ func (h *EmpresaHandler) Criar(c echo.Context) error {
 }
 
 func (h *EmpresaHandler) Lista(c echo.Context) error {
-	rows, _ := h.DB.Query("SELECT id, nome, cor FROM empresas")
+	rows, err := h.DB.Query("SELECT id, nome, cor FROM empresas")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
 	defer rows.Close()
 
 	var empresas []echo.Map
+
 	for rows.Next() {
 		var id int
 		var nome, cor string
-		rows.Scan(&id, &nome, &cor)
-		empresas = append(empresas, echo.Map{"id": id, "nome": nome, "cor": cor})
+
+		if err := rows.Scan(&id, &nome, &cor); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+		}
+
+		empresas = append(empresas, echo.Map{
+			"id":   id,
+			"nome": nome,
+			"cor":  cor,
+		})
 	}
+
+	if err := rows.Err(); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
 	return c.JSON(http.StatusOK, empresas)
 }
 
@@ -109,36 +126,96 @@ func (h *EmpresaHandler) Editar(c echo.Context) error {
 
 func (h *EmpresaHandler) Apagar(c echo.Context) error {
 	id := c.Param("id")
-	tables := []string{"users", "campos_personalizados_empresas", "campos_personalizados_alternativas_empresas", "programas_empresas"}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
+	tables := []string{
+		"users",
+		"campos_personalizados_empresas",
+		"campos_personalizados_alternativas_empresas",
+		"programas_empresas",
+	}
 
 	for _, table := range tables {
-		h.DB.Exec(fmt.Sprintf("DELETE FROM %s WHERE id_empresa = ?", table), id)
+		query := fmt.Sprintf("DELETE FROM %s WHERE id_empresa = ?", table)
+
+		if _, err := tx.Exec(query, id); err != nil {
+			tx.Rollback()
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+		}
 	}
-	h.DB.Exec("DELETE FROM empresas WHERE id = ?", id)
+
+	if _, err := tx.Exec("DELETE FROM empresas WHERE id = ?", id); err != nil {
+		tx.Rollback()
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
 	return c.Redirect(http.StatusFound, "/adm/lista-empresas")
 }
 
 func (h *EmpresaHandler) Dashboard(c echo.Context) error {
-	empresaID := c.FormValue("id_empresa")
+	empresaID := c.QueryParam("id_empresa")
+
+	if empresaID == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"error": "id_empresa é obrigatório",
+		})
+	}
 
 	var usuariosCount int
-	h.DB.QueryRow("SELECT COUNT(*) FROM users WHERE id_empresa = ? AND type = '2'", empresaID).Scan(&usuariosCount)
+	err := h.DB.QueryRow(
+		"SELECT COUNT(*) FROM users WHERE id_empresa = ? AND type = '2'",
+		empresaID,
+	).Scan(&usuariosCount)
 
-	rows, _ := h.DB.Query(`
-		SELECT p.intervalo_inicio, p.intervalo_termino, p.intervalo_tipo 
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"error": err.Error(),
+		})
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT pe.intervalo_inicio, pe.intervalo_termino, pe.intervalo_tipo 
 		FROM programas_empresas pe
 		JOIN programas p ON pe.id_programa = p.id
 		WHERE pe.id_empresa = ?`, empresaID)
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"error": err.Error(),
+		})
+	}
 	defer rows.Close()
 
 	campanhasAtivas := 0
-	hoje := time.Now().Format("2006-01-02")
+	hoje := time.Now()
+
 	for rows.Next() {
-		var inicio, termino sql.NullString
+		var inicio, termino sql.NullTime
 		var tipo string
-		rows.Scan(&inicio, &termino, &tipo)
-		if (inicio.Valid && hoje >= inicio.String && hoje <= termino.String) || tipo == "indeterminado" {
+
+		if err := rows.Scan(&inicio, &termino, &tipo); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{
+				"error": err.Error(),
+			})
+		}
+
+		if tipo == "indeterminado" {
 			campanhasAtivas++
+			continue
+		}
+
+		if inicio.Valid && termino.Valid {
+			if hoje.After(inicio.Time) && hoje.Before(termino.Time) {
+				campanhasAtivas++
+			}
 		}
 	}
 
@@ -178,17 +255,30 @@ func (h *EmpresaHandler) CoachingParticipante(c echo.Context) error {
 }
 
 func (h *EmpresaHandler) salvarArquivo(file *multipart.FileHeader, pasta string) (string, error) {
-	src, _ := file.Open()
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
 	defer src.Close()
 
-	os.MkdirAll("public/"+pasta, 0755)
-	nome := fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
-	dstPath := filepath.Join("public", pasta, nome)
+	fullPath := filepath.Join("public", pasta)
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
+		return "", err
+	}
 
-	dst, _ := os.Create(dstPath)
+	nome := fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
+	dstPath := filepath.Join(fullPath, nome)
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return "", err
+	}
 	defer dst.Close()
 
-	io.Copy(dst, src)
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", err
+	}
+
 	return nome, nil
 }
 
@@ -221,18 +311,38 @@ func (h *EmpresaHandler) ApagarCampo(c echo.Context) error {
 }
 
 func (h *EmpresaHandler) ListaUsuarios(c echo.Context) error {
-	empresaid := c.Get("id_empresa")
+	empresaID := c.Get("id_empresa")
 
-	rows, _ := h.DB.Query("SELECT id, name, email FROM users WHERE id_empresa = ? AND type = '2'", empresaid)
+	rows, err := h.DB.Query(
+		"SELECT id, name, email FROM users WHERE id_empresa = ? AND type = '2'",
+		empresaID,
+	)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
 	defer rows.Close()
 
 	var participantes []echo.Map
+
 	for rows.Next() {
 		var id int
 		var name, email string
-		rows.Scan(&id, &name, &email)
-		participantes = append(participantes, echo.Map{"id": id, "name": name, "email": email})
+
+		if err := rows.Scan(&id, &name, &email); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+		}
+
+		participantes = append(participantes, echo.Map{
+			"id":    id,
+			"name":  name,
+			"email": email,
+		})
 	}
+
+	if err := rows.Err(); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
 	return c.JSON(http.StatusOK, participantes)
 }
 
@@ -471,7 +581,7 @@ func (h *EmpresaHandler) GetRiskAnalysis(c echo.Context) error {
 	idProg := c.QueryParam("id_programa")
 	idQ := c.QueryParam("id_questionario")
 
-	query := `
+	rows, err := h.DB.Query(`
 		SELECT 
 			CASE 
 				WHEN score <= 25 THEN 'verde'
@@ -488,17 +598,28 @@ func (h *EmpresaHandler) GetRiskAnalysis(c echo.Context) error {
 			GROUP BY pr.id_user
 		) as scores
 		GROUP BY cor
-	`
+	`, idEmp, idProg, idQ)
 
-	rows, _ := h.DB.Query(query, idEmp, idProg, idQ)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
 	defer rows.Close()
 
 	analise := make(map[string]int)
+
 	for rows.Next() {
 		var cor string
 		var total int
-		rows.Scan(&cor, &total)
+
+		if err := rows.Scan(&cor, &total); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+		}
+
 		analise[cor] = total
+	}
+
+	if err := rows.Err(); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
 	}
 
 	return c.JSON(http.StatusOK, analise)
