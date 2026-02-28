@@ -360,5 +360,3 @@ func (h *ParticipanteHandler) UploadExcel(c echo.Context) error {
 		"ja_cadastrados": jaCadastrados,
 	})
 }
-
-
