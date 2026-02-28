@@ -29,11 +29,13 @@ func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		authHeader := c.Request().Header.Get("Authorization")
 		if authHeader == "" {
+			fmt.Println("Token não fornecido")
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Token não fornecido"})
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			fmt.Println("Formato do token inválido")
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Token inválido"})
 		}
 
@@ -45,8 +47,10 @@ func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				fmt.Printf("Método de assinatura inesperado: %v\n", token.Header["alg"])
 				return nil, echo.NewHTTPError(http.StatusUnauthorized, "Método de assinatura inesperado")
 			}
+
 			return []byte(secret), nil
 		})
 
@@ -56,11 +60,14 @@ func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			fmt.Println("Falha ao extrair dados do token")
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Falha ao extrair dados do token"})
 		}
 
 		c.Set("userData", map[string]interface{}{
 			"user_id": claims["user_id"],
+			"type":    claims["type"],
+			"empresa_id": claims["empresa_id"],
 		})
 
 		return next(c)
