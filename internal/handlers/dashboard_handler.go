@@ -22,10 +22,10 @@ func (h *DashboardHandler) Home(c echo.Context) error {
 
 	err := h.DB.QueryRow(`
 		SELECT
-			(SELECT COUNT(*) FROM users WHERE id_empresa IS NOT NULL AND type = ?) AS participantes,
+			(SELECT COUNT(*) FROM users WHERE id_empresa IS NOT NULL AND type = 2) AS participantes,
 			(SELECT COUNT(*) FROM empresas) AS empresas,
 			(SELECT COUNT(*) FROM questionarios WHERE deleted IS NULL) AS questionarios
-	`, 2).Scan(&participantes, &empresas, &questionarios)
+	`).Scan(&participantes, &empresas, &questionarios)
 
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{

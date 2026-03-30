@@ -13,6 +13,7 @@ services:
       SSL_KEY_FILE: /cert/privkey.pem
     volumes:
       - ./cert:/cert:ro
+      - ./arquivos:/app/arquivos
     restart: unless-stopped
     networks:
       - rumosaudavel_network

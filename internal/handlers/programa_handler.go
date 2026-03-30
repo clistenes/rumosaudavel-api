@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +18,15 @@ func NewProgramaHandler(db *sql.DB) *ProgramaHandler {
 	return &ProgramaHandler{DB: db}
 }
 
+type Programa struct {
+	ID         int       `json:"id"`
+	Nome       string    `json:"nome"`
+	Introducao string    `json:"introducao"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 func (h *ProgramaHandler) Criar(c echo.Context) error {
+
 	type Request struct {
 		Nome          string `json:"nome"`
 		Introducao    string `json:"introducao"`
@@ -24,34 +34,63 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 	}
 
 	var req Request
+
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(400, echo.Map{"error": "dados inválidos"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "dados inválidos"})
 	}
 
 	var exists int
-	h.DB.QueryRow(`SELECT COUNT(*) FROM programas WHERE nome = ?`, req.Nome).Scan(&exists)
+	err := h.DB.QueryRow(
+		`SELECT COUNT(*) FROM programas WHERE nome = ?`,
+		req.Nome,
+	).Scan(&exists)
+
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao validar programa"})
+	}
+
 	if exists > 0 {
 		return c.JSON(409, echo.Map{"error": "nome do programa já existe"})
 	}
 
-	res, err := h.DB.Exec(`
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
+	}
+
+	res, err := tx.Exec(`
 		INSERT INTO programas (nome, introducao)
 		VALUES (?, ?)
 	`, req.Nome, req.Introducao)
+
 	if err != nil {
+		tx.Rollback()
 		return c.JSON(500, echo.Map{"error": "erro ao criar programa"})
 	}
 
-	programaID, _ := res.LastInsertId()
-
-	for _, q := range req.Questionarios {
-		h.DB.Exec(`
-			INSERT INTO programas_questionarios (id_programa, id_questionario)
-			VALUES (?, ?)
-		`, programaID, q)
+	programaID, err := res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao obter id"})
 	}
 
-	return c.JSON(201, echo.Map{
+	for _, q := range req.Questionarios {
+
+		_, err := tx.Exec(`
+			INSERT INTO programas_questionarios
+			(id_programa, id_questionario)
+			VALUES (?, ?)
+		`, programaID, q)
+
+		if err != nil {
+			tx.Rollback()
+			return c.JSON(500, echo.Map{"error": "erro ao vincular questionário"})
+		}
+	}
+
+	tx.Commit()
+
+	return c.JSON(http.StatusCreated, echo.Map{
 		"id_programa": programaID,
 		"status":      "criado",
 	})
@@ -67,34 +106,56 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 	}
 
 	var req Request
-	c.Bind(&req)
 
-	_, err := h.DB.Exec(`
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(400, echo.Map{"error": "dados inválidos"})
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
+	}
+
+	_, err = tx.Exec(`
 		UPDATE programas
-			SET nome = ?, introducao = ?, ordenacao_questionarios = ?
+		SET nome = ?, introducao = ?, ordenacao_questionarios = ?
 		WHERE id = ?
 	`, req.Nome, req.Introducao, req.Ordenacao, req.ID)
 
 	if err != nil {
+		tx.Rollback()
 		return c.JSON(500, echo.Map{"error": "erro ao atualizar programa"})
 	}
 
-	h.DB.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, req.ID)
+	_, err = tx.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, req.ID)
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao atualizar questionários"})
+	}
 
 	for _, q := range req.Questionarios {
-		h.DB.Exec(`
-			INSERT INTO programas_questionarios (id_programa, id_questionario)
+
+		_, err := tx.Exec(`
+			INSERT INTO programas_questionarios
+			(id_programa, id_questionario)
 			VALUES (?, ?)
 		`, req.ID, q)
+
+		if err != nil {
+			tx.Rollback()
+			return c.JSON(500, echo.Map{"error": "erro ao inserir questionário"})
+		}
 	}
+
+	tx.Commit()
 
 	return c.JSON(200, echo.Map{"status": "atualizado"})
 }
 
 func (h *ProgramaHandler) Lista(c echo.Context) error {
 	rows, err := h.DB.Query(`
-		SELECT id, nome, introducao, created_at
-		FROM programas
+		SELECT id, COALESCE(nome, '') as nome, COALESCE(introducao, '') as introducao, created_at
+			FROM programas
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -102,22 +163,84 @@ func (h *ProgramaHandler) Lista(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	type Programa struct {
-		ID         int       `json:"id"`
-		Nome       string    `json:"nome"`
-		Introducao string    `json:"introducao"`
-		CreatedAt  time.Time `json:"created_at"`
-	}
-
 	var programas []Programa
 
 	for rows.Next() {
 		var p Programa
-		rows.Scan(&p.ID, &p.Nome, &p.Introducao, &p.CreatedAt)
+
+		err := rows.Scan(&p.ID, &p.Nome, &p.Introducao, &p.CreatedAt)
+		if err != nil {
+			return c.JSON(500, echo.Map{"error": "erro ao processar resultado"})
+		}
+
 		programas = append(programas, p)
 	}
 
 	return c.JSON(200, programas)
+}
+
+func (h *ProgramaHandler) Empresas(c echo.Context) error {
+	programaID := c.QueryParam("id")
+	if programaID == "" {
+		return c.JSON(400, echo.Map{"error": "id do programa é obrigatório"})
+	}
+
+	Id, err := strconv.Atoi(programaID)
+	if err != nil {
+		return c.JSON(400, echo.Map{"error": "id inválido"})
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT e.id, e.nome, e.logotipo, pe.intervalo_inicio, pe.intervalo_termino
+			FROM empresas e
+		INNER JOIN programas_empresas pe ON (e.id = pe.id_empresa)
+		WHERE pe.id_programa = ?
+	`, Id)
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao buscar empresas"})
+	}
+	defer rows.Close()
+
+	type EmpresaVinculada struct {
+		ID               int     `json:"id"`
+		Nome             string  `json:"nome"`
+		Logotipo         *string `json:"logotipo,omitempty"`
+		IntervaloInicio  *string `json:"intervalo_inicio,omitempty"`
+		IntervaloTermino *string `json:"intervalo_termino,omitempty"`
+	}
+
+	var empresas []EmpresaVinculada
+
+	for rows.Next() {
+		var ev EmpresaVinculada
+		var logotipo sql.NullString
+		var inicio, termino sql.NullString
+
+		err := rows.Scan(&ev.ID, &ev.Nome, &logotipo, &inicio, &termino)
+		if err != nil {
+			return c.JSON(500, echo.Map{"error": "erro ao processar resultado, " + err.Error()})
+		}
+
+		if logotipo.Valid {
+			ev.Logotipo = &logotipo.String
+		}
+
+		if inicio.Valid {
+			ev.IntervaloInicio = &inicio.String
+		}
+
+		if termino.Valid {
+			ev.IntervaloTermino = &termino.String
+		}
+
+		empresas = append(empresas, ev)
+	}
+
+	if len(empresas) == 0 {
+		return c.JSON(404, echo.Map{"error": "nenhuma empresa encontrada para o programa especificado"})
+	}
+
+	return c.JSON(200, empresas)
 }
 
 func (h *ProgramaHandler) VincularEmpresa(c echo.Context) error {
@@ -127,24 +250,48 @@ func (h *ProgramaHandler) VincularEmpresa(c echo.Context) error {
 	}
 
 	var req Request
-	c.Bind(&req)
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(400, echo.Map{"error": "dados inválidos"})
+	}
 
 	var count int
-	h.DB.QueryRow(`
+
+	err := h.DB.QueryRow(`
 		SELECT COUNT(*)
 		FROM programas_empresas
 		WHERE id_empresa = ? AND id_programa = ?
 	`, req.EmpresaID, req.ProgramaID).Scan(&count)
 
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao verificar vínculo"})
+	}
+
 	if count == 0 {
-		h.DB.Exec(`
+		_, err := h.DB.Exec(`
 			INSERT INTO programas_empresas
-			(id_empresa, id_programa, intervalo_tipo)
+			(id_programa, id_empresa, intervalo_tipo)
 			VALUES (?, ?, 'indeterminado')
-		`, req.EmpresaID, req.ProgramaID)
+		`, req.ProgramaID, req.EmpresaID)
+
+		if err != nil {
+			return c.JSON(500, echo.Map{"error": "erro ao vincular"})
+		}
 	}
 
 	return c.JSON(200, echo.Map{"status": "vinculado"})
+}
+
+func parseDateBR(date string) string {
+
+	date = strings.ReplaceAll(date, "/", "-")
+
+	t, err := time.Parse("02-01-2006", date)
+	if err != nil {
+		return ""
+	}
+
+	return t.Format("2006-01-02")
 }
 
 func (h *ProgramaHandler) DefinirIntervalo(c echo.Context) error {
@@ -156,14 +303,17 @@ func (h *ProgramaHandler) DefinirIntervalo(c echo.Context) error {
 	}
 
 	var req Request
-	c.Bind(&req)
 
-	inicio := strings.ReplaceAll(req.Inicio, "/", "-")
-	termino := strings.ReplaceAll(req.Termino, "/", "-")
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(400, echo.Map{"error": "dados inválidos"})
+	}
+
+	inicio := parseDateBR(req.Inicio)
+	termino := parseDateBR(req.Termino)
 
 	_, err := h.DB.Exec(`
 		UPDATE programas_empresas
-			SET intervalo_inicio = ?, intervalo_termino = ?
+		SET intervalo_inicio = ?, intervalo_termino = ?
 		WHERE id_empresa = ? AND id_programa = ?
 	`, inicio, termino, req.EmpresaID, req.ProgramaID)
 
@@ -175,65 +325,134 @@ func (h *ProgramaHandler) DefinirIntervalo(c echo.Context) error {
 }
 
 func (h *ProgramaHandler) ResetarIntervalo(c echo.Context) error {
-	empresaID := c.Param("empresa")
-	programaID := c.Param("programa")
+	empresaID, err := strconv.Atoi(c.Param("empresa"))
+	if err != nil {
+		return c.JSON(400, echo.Map{"error": "empresa inválida"})
+	}
 
-	h.DB.Exec(`
+	programaID, err := strconv.Atoi(c.Param("programa"))
+	if err != nil {
+		return c.JSON(400, echo.Map{"error": "programa inválido"})
+	}
+
+	_, err = h.DB.Exec(`
 		UPDATE programas_empresas
-			SET intervalo_inicio = NULL, intervalo_termino = NULL
+		SET intervalo_inicio = NULL,
+		    intervalo_termino = NULL
 		WHERE id_empresa = ? AND id_programa = ?
 	`, empresaID, programaID)
+
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao resetar intervalo"})
+	}
 
 	return c.JSON(200, echo.Map{"status": "intervalo removido"})
 }
 
 func (h *ProgramaHandler) Apagar(c echo.Context) error {
-	id := c.Param("id")
 
-	h.DB.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, id)
-	h.DB.Exec(`DELETE FROM programas_empresas WHERE id_programa = ?`, id)
-	h.DB.Exec(`DELETE FROM programas WHERE id = ?`, id)
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return c.JSON(400, echo.Map{"error": "id inválido"})
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
+	}
+
+	_, err = tx.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, id)
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao remover questionários"})
+	}
+
+	_, err = tx.Exec(`DELETE FROM programas_empresas WHERE id_programa = ?`, id)
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao remover vínculos"})
+	}
+
+	_, err = tx.Exec(`DELETE FROM programas WHERE id = ?`, id)
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao remover programa"})
+	}
+
+	tx.Commit()
 
 	return c.NoContent(204)
 }
 
 func (h *ProgramaHandler) Duplicar(c echo.Context) error {
-	id := c.Param("id")
 
-	tx, _ := h.DB.Begin()
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return c.JSON(400, echo.Map{"error": "id inválido"})
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
+	}
 
 	var nome, introducao string
-	tx.QueryRow(`
+
+	err = tx.QueryRow(`
 		SELECT nome, introducao
 		FROM programas
 		WHERE id = ?
 	`, id).Scan(&nome, &introducao)
 
-	res, _ := tx.Exec(`
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(404, echo.Map{"error": "programa não encontrado"})
+	}
+
+	res, err := tx.Exec(`
 		INSERT INTO programas (nome, introducao)
 		VALUES (?, ?)
 	`, nome+" cópia", introducao)
 
-	novoID, _ := res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao duplicar"})
+	}
 
-	tx.Exec(`
+	novoID, err := res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao obter id"})
+	}
+
+	_, err = tx.Exec(`
 		INSERT INTO programas_empresas (id_programa, id_empresa, intervalo_tipo)
 		SELECT ?, id_empresa, intervalo_tipo
 		FROM programas_empresas
 		WHERE id_programa = ?
 	`, novoID, id)
 
-	tx.Exec(`
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao copiar empresas"})
+	}
+
+	_, err = tx.Exec(`
 		INSERT INTO programas_questionarios (id_programa, id_questionario)
 		SELECT ?, id_questionario
 		FROM programas_questionarios
 		WHERE id_programa = ?
 	`, novoID, id)
 
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao copiar questionários"})
+	}
+
 	tx.Commit()
 
 	return c.JSON(201, echo.Map{
 		"id_programa": novoID,
-		"status":     "duplicado",
+		"status":      "duplicado",
 	})
 }

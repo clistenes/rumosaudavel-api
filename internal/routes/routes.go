@@ -74,6 +74,7 @@ func Routes(e *echo.Echo, db *sql.DB) {
 	api.POST("/programas", programaHandler.Criar)
 	api.PUT("/programas", programaHandler.Editar)
 	api.GET("/programas", programaHandler.Lista)
+	api.GET("/programas/empresas", programaHandler.Empresas)
 	api.POST("/programas/vincular", programaHandler.VincularEmpresa)
 	api.POST("/programas/intervalo", programaHandler.DefinirIntervalo)
 	api.DELETE("/programas/intervalo/:empresa/:programa", programaHandler.ResetarIntervalo)
