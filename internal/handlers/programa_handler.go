@@ -376,7 +376,6 @@ func (h *ProgramaHandler) ResetarIntervalo(c echo.Context) error {
 }
 
 func (h *ProgramaHandler) Apagar(c echo.Context) error {
-
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return c.JSON(400, echo.Map{"error": "id inválido"})
@@ -407,11 +406,10 @@ func (h *ProgramaHandler) Apagar(c echo.Context) error {
 
 	tx.Commit()
 
-	return c.NoContent(204)
+	return c.JSON(200, echo.Map{"status": "removido"})
 }
 
 func (h *ProgramaHandler) Duplicar(c echo.Context) error {
-
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return c.JSON(400, echo.Map{"error": "id inválido"})
@@ -422,13 +420,13 @@ func (h *ProgramaHandler) Duplicar(c echo.Context) error {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
-	var nome, introducao string
+	var nome, introducao, ordenacaoQuestionarios string
 
 	err = tx.QueryRow(`
-		SELECT nome, introducao
+		SELECT nome, introducao, ordenacao_questionarios
 		FROM programas
 		WHERE id = ?
-	`, id).Scan(&nome, &introducao)
+	`, id).Scan(&nome, &introducao, &ordenacaoQuestionarios)
 
 	if err != nil {
 		tx.Rollback()
@@ -436,13 +434,13 @@ func (h *ProgramaHandler) Duplicar(c echo.Context) error {
 	}
 
 	res, err := tx.Exec(`
-		INSERT INTO programas (nome, introducao)
-		VALUES (?, ?)
-	`, nome+" cópia", introducao)
+		INSERT INTO programas (nome, introducao, ordenacao_questionarios, created_at, updated_at)
+		VALUES (?, ?, ?, NOW(), NOW())
+	`, nome+" cópia", introducao, ordenacaoQuestionarios)
 
 	if err != nil {
 		tx.Rollback()
-		return c.JSON(500, echo.Map{"error": "erro ao duplicar"})
+		return c.JSON(500, echo.Map{"error": "erro ao duplicar programa"})
 	}
 
 	novoID, err := res.LastInsertId()

@@ -79,7 +79,7 @@ func Routes(e *echo.Echo, db *sql.DB) {
 	api.POST("/programas/intervalo", programaHandler.DefinirIntervalo)
 	api.DELETE("/programas/intervalo/:empresa/:programa", programaHandler.ResetarIntervalo)
 	api.DELETE("/programas/:id", programaHandler.Apagar)
-	api.POST("/programas/:id/duplicar", programaHandler.Duplicar)
+	api.POST("/programas/duplicar/:id", programaHandler.Duplicar)
 
 	questionarioHandler := handlers.NewQuestionarioHandler(db)
 	
