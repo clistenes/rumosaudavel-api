@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,17 +27,31 @@ type Programa struct {
 }
 
 func (h *ProgramaHandler) Criar(c echo.Context) error {
-
 	type Request struct {
 		Nome          string `json:"nome"`
 		Introducao    string `json:"introducao"`
+		Ordenacao     string `json:"ordenacao_questionarios"`
 		Questionarios []int  `json:"questionarios"`
 	}
 
-	var req Request
+	var body map[string]interface{}
 
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "dados inválidos"})
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(400, echo.Map{"error": "dados inválidos"})
+	}
+
+	if body["nome"] == nil || body["introducao"] == nil || body["ordenacao_questionarios"] == nil {
+		return c.JSON(400, echo.Map{"error": "campos obrigatórios: nome, introducao, ordenacao_questionarios"})
+	}
+
+	req := Request{
+		Nome:       body["nome"].(string),
+		Introducao: body["introducao"].(string),
+		Ordenacao:  body["ordenacao_questionarios"].(string),
+	}
+
+	if strings.TrimSpace(req.Nome) == "" {
+		return c.JSON(400, echo.Map{"error": "nome é obrigatório"})
 	}
 
 	var exists int
@@ -59,9 +74,9 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 	}
 
 	res, err := tx.Exec(`
-		INSERT INTO programas (nome, introducao)
-		VALUES (?, ?)
-	`, req.Nome, req.Introducao)
+		INSERT INTO programas (created_at, updated_at, nome, introducao, ordenacao_questionarios)
+		VALUES (?, ?, ?, ?, ?)
+	`, time.Now(), time.Now(), req.Nome, req.Introducao, req.Ordenacao)
 
 	if err != nil {
 		tx.Rollback()
@@ -111,16 +126,28 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 		return c.JSON(400, echo.Map{"error": "dados inválidos"})
 	}
 
+	fmt.Printf("Dados recebidos para edição: %+v\n", req)
+
 	tx, err := h.DB.Begin()
 	if err != nil {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
+	count := 0
+	err = tx.QueryRow(`SELECT COUNT(*) FROM programas WHERE id = ?`, req.ID).Scan(&count)
+
+	if count == 0 {
+		tx.Rollback()
+		return c.JSON(404, echo.Map{"error": "programa não encontrado"})
+	}
+
+	fmt.Printf("Programa encontrado com ID: %d\n", req.ID)
+
 	_, err = tx.Exec(`
 		UPDATE programas
-		SET nome = ?, introducao = ?, ordenacao_questionarios = ?
+		SET nome = ?, introducao = ?, ordenacao_questionarios = ?, updated_at = ?
 		WHERE id = ?
-	`, req.Nome, req.Introducao, req.Ordenacao, req.ID)
+	`, req.Nome, req.Introducao, req.Ordenacao, time.Now(), req.ID)
 
 	if err != nil {
 		tx.Rollback()
@@ -134,7 +161,6 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 	}
 
 	for _, q := range req.Questionarios {
-
 		_, err := tx.Exec(`
 			INSERT INTO programas_questionarios
 			(id_programa, id_questionario)
@@ -218,7 +244,7 @@ func (h *ProgramaHandler) Empresas(c echo.Context) error {
 
 		err := rows.Scan(&ev.ID, &ev.Nome, &logotipo, &inicio, &termino)
 		if err != nil {
-			return c.JSON(500, echo.Map{"error": "erro ao processar resultado, " + err.Error()})
+			return c.JSON(500, echo.Map{"error": "erro ao processar resultado"})
 		}
 
 		if logotipo.Valid {
