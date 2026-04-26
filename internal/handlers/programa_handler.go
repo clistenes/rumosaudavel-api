@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +25,14 @@ type Programa struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type EmpresaVinculada struct {
+	ID               int     `json:"id"`
+	Nome             string  `json:"nome"`
+	Logotipo         *string `json:"logotipo,omitempty"`
+	IntervaloInicio  *string `json:"intervalo_inicio,omitempty"`
+	IntervaloTermino *string `json:"intervalo_termino,omitempty"`
+}
+
 func (h *ProgramaHandler) Criar(c echo.Context) error {
 	type Request struct {
 		Nome          string `json:"nome"`
@@ -34,32 +41,20 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 		Questionarios []int  `json:"questionarios"`
 	}
 
-	var body map[string]interface{}
+	var req Request
 
-	if err := c.Bind(&body); err != nil {
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(400, echo.Map{"error": "dados inválidos"})
 	}
 
-	if body["nome"] == nil || body["introducao"] == nil || body["ordenacao_questionarios"] == nil {
+	if strings.TrimSpace(req.Nome) == "" ||
+		strings.TrimSpace(req.Introducao) == "" ||
+		strings.TrimSpace(req.Ordenacao) == "" {
 		return c.JSON(400, echo.Map{"error": "campos obrigatórios: nome, introducao, ordenacao_questionarios"})
 	}
 
-	req := Request{
-		Nome:       body["nome"].(string),
-		Introducao: body["introducao"].(string),
-		Ordenacao:  body["ordenacao_questionarios"].(string),
-	}
-
-	if strings.TrimSpace(req.Nome) == "" {
-		return c.JSON(400, echo.Map{"error": "nome é obrigatório"})
-	}
-
 	var exists int
-	err := h.DB.QueryRow(
-		`SELECT COUNT(*) FROM programas WHERE nome = ?`,
-		req.Nome,
-	).Scan(&exists)
-
+	err := h.DB.QueryRow(`SELECT COUNT(*) FROM programas WHERE nome = ?`, req.Nome).Scan(&exists)
 	if err != nil {
 		return c.JSON(500, echo.Map{"error": "erro ao validar programa"})
 	}
@@ -73,10 +68,12 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
+	now := time.Now()
+
 	res, err := tx.Exec(`
 		INSERT INTO programas (created_at, updated_at, nome, introducao, ordenacao_questionarios)
 		VALUES (?, ?, ?, ?, ?)
-	`, time.Now(), time.Now(), req.Nome, req.Introducao, req.Ordenacao)
+	`, now, now, req.Nome, req.Introducao, req.Ordenacao)
 
 	if err != nil {
 		tx.Rollback()
@@ -90,10 +87,8 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 	}
 
 	for _, q := range req.Questionarios {
-
 		_, err := tx.Exec(`
-			INSERT INTO programas_questionarios
-			(id_programa, id_questionario)
+			INSERT INTO programas_questionarios (id_programa, id_questionario)
 			VALUES (?, ?)
 		`, programaID, q)
 
@@ -103,7 +98,9 @@ func (h *ProgramaHandler) Criar(c echo.Context) error {
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao finalizar transação"})
+	}
 
 	return c.JSON(http.StatusCreated, echo.Map{
 		"id_programa": programaID,
@@ -126,22 +123,26 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 		return c.JSON(400, echo.Map{"error": "dados inválidos"})
 	}
 
-	fmt.Printf("Dados recebidos para edição: %+v\n", req)
+	if req.ID == 0 {
+		return c.JSON(400, echo.Map{"error": "id é obrigatório"})
+	}
 
 	tx, err := h.DB.Begin()
 	if err != nil {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
-	count := 0
+	var count int
 	err = tx.QueryRow(`SELECT COUNT(*) FROM programas WHERE id = ?`, req.ID).Scan(&count)
+	if err != nil {
+		tx.Rollback()
+		return c.JSON(500, echo.Map{"error": "erro ao buscar programa"})
+	}
 
 	if count == 0 {
 		tx.Rollback()
 		return c.JSON(404, echo.Map{"error": "programa não encontrado"})
 	}
-
-	fmt.Printf("Programa encontrado com ID: %d\n", req.ID)
 
 	_, err = tx.Exec(`
 		UPDATE programas
@@ -162,8 +163,7 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 
 	for _, q := range req.Questionarios {
 		_, err := tx.Exec(`
-			INSERT INTO programas_questionarios
-			(id_programa, id_questionario)
+			INSERT INTO programas_questionarios (id_programa, id_questionario)
 			VALUES (?, ?)
 		`, req.ID, q)
 
@@ -173,15 +173,17 @@ func (h *ProgramaHandler) Editar(c echo.Context) error {
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao finalizar transação"})
+	}
 
 	return c.JSON(200, echo.Map{"status": "atualizado"})
 }
 
 func (h *ProgramaHandler) Lista(c echo.Context) error {
 	rows, err := h.DB.Query(`
-		SELECT id, COALESCE(nome, '') as nome, COALESCE(introducao, '') as introducao, created_at
-			FROM programas
+		SELECT id, COALESCE(nome, ''), COALESCE(introducao, ''), created_at
+		FROM programas
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -193,9 +195,7 @@ func (h *ProgramaHandler) Lista(c echo.Context) error {
 
 	for rows.Next() {
 		var p Programa
-
-		err := rows.Scan(&p.ID, &p.Nome, &p.Introducao, &p.CreatedAt)
-		if err != nil {
+		if err := rows.Scan(&p.ID, &p.Nome, &p.Introducao, &p.CreatedAt); err != nil {
 			return c.JSON(500, echo.Map{"error": "erro ao processar resultado"})
 		}
 
@@ -211,39 +211,29 @@ func (h *ProgramaHandler) Empresas(c echo.Context) error {
 		return c.JSON(400, echo.Map{"error": "id do programa é obrigatório"})
 	}
 
-	Id, err := strconv.Atoi(programaID)
+	id, err := strconv.Atoi(programaID)
 	if err != nil {
 		return c.JSON(400, echo.Map{"error": "id inválido"})
 	}
 
 	rows, err := h.DB.Query(`
 		SELECT e.id, e.nome, e.logotipo, pe.intervalo_inicio, pe.intervalo_termino
-			FROM empresas e
-		INNER JOIN programas_empresas pe ON (e.id = pe.id_empresa)
+		FROM empresas e
+		INNER JOIN programas_empresas pe ON e.id = pe.id_empresa
 		WHERE pe.id_programa = ?
-	`, Id)
+	`, id)
 	if err != nil {
 		return c.JSON(500, echo.Map{"error": "erro ao buscar empresas"})
 	}
 	defer rows.Close()
 
-	type EmpresaVinculada struct {
-		ID               int     `json:"id"`
-		Nome             string  `json:"nome"`
-		Logotipo         *string `json:"logotipo,omitempty"`
-		IntervaloInicio  *string `json:"intervalo_inicio,omitempty"`
-		IntervaloTermino *string `json:"intervalo_termino,omitempty"`
-	}
-
 	var empresas []EmpresaVinculada
 
 	for rows.Next() {
 		var ev EmpresaVinculada
-		var logotipo sql.NullString
-		var inicio, termino sql.NullString
+		var logotipo, inicio, termino sql.NullString
 
-		err := rows.Scan(&ev.ID, &ev.Nome, &logotipo, &inicio, &termino)
-		if err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Nome, &logotipo, &inicio, &termino); err != nil {
 			return c.JSON(500, echo.Map{"error": "erro ao processar resultado"})
 		}
 
@@ -262,10 +252,6 @@ func (h *ProgramaHandler) Empresas(c echo.Context) error {
 		empresas = append(empresas, ev)
 	}
 
-	if len(empresas) == 0 {
-		return c.JSON(404, echo.Map{"error": "nenhuma empresa encontrada para o programa especificado"})
-	}
-
 	return c.JSON(200, empresas)
 }
 
@@ -282,7 +268,6 @@ func (h *ProgramaHandler) VincularEmpresa(c echo.Context) error {
 	}
 
 	var count int
-
 	err := h.DB.QueryRow(`
 		SELECT COUNT(*)
 		FROM programas_empresas
@@ -295,8 +280,7 @@ func (h *ProgramaHandler) VincularEmpresa(c echo.Context) error {
 
 	if count == 0 {
 		_, err := h.DB.Exec(`
-			INSERT INTO programas_empresas
-			(id_programa, id_empresa, intervalo_tipo)
+			INSERT INTO programas_empresas (id_programa, id_empresa, intervalo_tipo)
 			VALUES (?, ?, 'indeterminado')
 		`, req.ProgramaID, req.EmpresaID)
 
@@ -309,14 +293,11 @@ func (h *ProgramaHandler) VincularEmpresa(c echo.Context) error {
 }
 
 func parseDateBR(date string) string {
-
 	date = strings.ReplaceAll(date, "/", "-")
-
 	t, err := time.Parse("02-01-2006", date)
 	if err != nil {
 		return ""
 	}
-
 	return t.Format("2006-01-02")
 }
 
@@ -386,25 +367,24 @@ func (h *ProgramaHandler) Apagar(c echo.Context) error {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
-	_, err = tx.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, id)
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM programas_questionarios WHERE id_programa = ?`, id); err != nil {
 		tx.Rollback()
 		return c.JSON(500, echo.Map{"error": "erro ao remover questionários"})
 	}
 
-	_, err = tx.Exec(`DELETE FROM programas_empresas WHERE id_programa = ?`, id)
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM programas_empresas WHERE id_programa = ?`, id); err != nil {
 		tx.Rollback()
 		return c.JSON(500, echo.Map{"error": "erro ao remover vínculos"})
 	}
 
-	_, err = tx.Exec(`DELETE FROM programas WHERE id = ?`, id)
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM programas WHERE id = ?`, id); err != nil {
 		tx.Rollback()
 		return c.JSON(500, echo.Map{"error": "erro ao remover programa"})
 	}
 
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao finalizar transação"})
+	}
 
 	return c.JSON(200, echo.Map{"status": "removido"})
 }
@@ -420,23 +400,25 @@ func (h *ProgramaHandler) Duplicar(c echo.Context) error {
 		return c.JSON(500, echo.Map{"error": "erro ao iniciar transação"})
 	}
 
-	var nome, introducao, ordenacaoQuestionarios string
+	var nome, introducao, ordenacao string
 
 	err = tx.QueryRow(`
 		SELECT nome, introducao, ordenacao_questionarios
 		FROM programas
 		WHERE id = ?
-	`, id).Scan(&nome, &introducao, &ordenacaoQuestionarios)
+	`, id).Scan(&nome, &introducao, &ordenacao)
 
 	if err != nil {
 		tx.Rollback()
 		return c.JSON(404, echo.Map{"error": "programa não encontrado"})
 	}
 
+	now := time.Now()
+
 	res, err := tx.Exec(`
 		INSERT INTO programas (nome, introducao, ordenacao_questionarios, created_at, updated_at)
-		VALUES (?, ?, ?, NOW(), NOW())
-	`, nome+" cópia", introducao, ordenacaoQuestionarios)
+		VALUES (?, ?, ?, ?, ?)
+	`, nome+" cópia", introducao, ordenacao, now, now)
 
 	if err != nil {
 		tx.Rollback()
@@ -450,8 +432,9 @@ func (h *ProgramaHandler) Duplicar(c echo.Context) error {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO programas_empresas (id_programa, id_empresa, intervalo_tipo)
-		SELECT ?, id_empresa, intervalo_tipo
+		INSERT INTO programas_empresas 
+		(id_programa, id_empresa, intervalo_tipo, intervalo_inicio, intervalo_termino)
+		SELECT ?, id_empresa, intervalo_tipo, intervalo_inicio, intervalo_termino
 		FROM programas_empresas
 		WHERE id_programa = ?
 	`, novoID, id)
@@ -473,7 +456,9 @@ func (h *ProgramaHandler) Duplicar(c echo.Context) error {
 		return c.JSON(500, echo.Map{"error": "erro ao copiar questionários"})
 	}
 
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return c.JSON(500, echo.Map{"error": "erro ao finalizar transação"})
+	}
 
 	return c.JSON(201, echo.Map{
 		"id_programa": novoID,
